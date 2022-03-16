@@ -1,26 +1,27 @@
 #include <MsgPack.h>
 #include <ArduinoHttpClient.h>
-
-#define DEBUGGING 1
 #include "arduino_secrets.h"
 #include <WebSocketClient.h>
 #include <b64.h>
 #include <WiFiNINA_Generic.h>
-// Here we define a maximum framelength to 64 bytes. Default is 256.
-#define MAX_FRAME_LENGTH 64
-
-// Define how many callback functions you have. Default is 1.
-#define CALLBACK_FUNCTIONS 1
 
 #define MAX_BUFFER_SIZE 128
-#define MAX_BYTE_BUFFER ((MAX_BUFFER_SIZE / 6) * 8) - 3
+#define MAX_BYTE_BUFFER 93
+
+#define Current_sensor A7  //The current sensor analog input pin
+#define Voltage_sensor1 A6  //The 1st voltage sensor analog input pin
+#define Voltage_sensor2 A1 //The 2nd voltage sensor analog input pin
 
 ///////please enter your sensitive data in the Secret tab/arduino_secrets.h
 /////// Wifi Settings ///////
 char ssid[] = SECRET_SSID;
 char pass[] = SECRET_PASS;
-char path[] = "/device/03pwbIIosvgLQhC_USUHmN6Iz-86xyY_X7noo-jksMc";
-char host[] = "167.71.68.242";
+char path[] = SECRET_PATH;
+char host[] = SECRET_HOST;
+
+float Cur;
+float v[101];
+float c[101];
 
 WiFiClient client;
 WebSocketClient webSocketClient = WebSocketClient(client, host, (uint16_t)80);
@@ -28,7 +29,11 @@ WebSocketClient webSocketClient = WebSocketClient(client, host, (uint16_t)80);
 int status = WL_IDLE_STATUS;
 
 void setup() {
+  analogReference(AR_EXTERNAL);
   Serial.begin(9600);
+  pinMode(Current_sensor, INPUT);
+  pinMode(Voltage_sensor1, INPUT);
+  pinMode(Voltage_sensor2, INPUT);
   
   while (!Serial);
   while ( status != WL_CONNECTED) {
@@ -105,50 +110,45 @@ bool Write_Message(WebSocketClient client, float *voltage, float *current, uint8
   return true;
 }
 
-float v[101] = {
-  10.0, -20.0, 30.0, -39.0, 49.0, -59.0, 69.0, -79.0,
-  88.0, -98.0, 108.0, -117.0, 126.0, -135.0, 144.0, -153.0,
-  162.0, -171.0, 179.0, -187.0, 195.0, -203.0, 211.0, -218.0,
-  225.0, -232.0, 239.0, -246.0, 252.0, -258.0, 264.0, -270.0,
-  275.0, -280.0, 285.0, -289.0, 294.0, -297.0, 301.0, -304.0,
-  308.0, -310.0, 313.0, -315.0, 317.0, -318.0, 320.0, -321.0,
-  321.0, -321.0, 321.0, -321.0, 321.0, -320.0, 318.0, -317.0,
-  315.0, -313.0, 310.0, -308.0, 304.0, -301.0, 297.0, -294.0,
-  289.0, -285.0, 280.0, -275.0, 270.0, -264.0, 258.0, -252.0,
-  246.0, -239.0, 232.0, -225.0, 218.0, -211.0, 203.0, -195.0,
-  187.0, -179.0, 171.0, -162.0, 153.0, -144.0, 135.0, -126.0,
-  117.0, -108.0, 98.0, -88.0, 79.0, -69.0, 59.0, -49.0, 39.0,
-  -30.0, 20.0, -10.0, 0.0
-};
-    
-float c[101] = {
-  0, 0.9980655971335943, 0, 0.9922698723632764, 0, 0.982635248222263,
-  0, 0.969198999199666, 0, 0.9520131075327285, 0, 0.931144062097659,
-  0, 0.9066726011770702, 0, 0.8786934000992674, 0, 0.8473147049577776,
-  0, 0.812657913828248, 0, 0.7748571071028802, 0, 0.7340585287594519,
-  0, 0.6904200205717402, 0, 0.6441104114503822, 0, 0.5953088642766521,
-  0, 0.5442041827560153, 0, 0.4909940809733123, 0, 0.4358844184753636,
-  0, 0.37908840384036124, 0, 0.32082576981535194, 0, 0.26132192321284753,
-  0, 0.20080707285569419, 0, 0.13951533894391552, 0, 0.07768384728898747,
-  0, 0.015551811920320853, 0, -0.04664039038743034, 0, -0.10865215008549843,
-  0, -0.17024355572243333, 0, -0.2311763221149872, 0, -0.29121471222728007,
-  0, -0.350126449191402, 0, -0.40768361494171007, 0, -0.46366353198535787,
-  0, -0.5178496248983402, 0, -0.5700322582138061, 0, -0.620009547460784,
-  0, -0.6675881402161703, 0, -0.7125839641475306, 0, -0.7548229391532678,
-  0, -0.7941416508447703, 0, -0.8303879827648034, 0, -0.8634217048966745,
-  0, -0.8931150161868064, 0, -0.9193530389822537, 0, -0.9420342634700077,
-  0, -0.9610709403987272, 0, -0.9763894205636116, 0, -0.9879304397407617,
-  0, -0.9956493479690226, 0, -0.9995162822919897, 0
-};
+void LoadData(void){
 
-int i = 0;
+ 
+    for(int i=0;i<101;i++){
+      
+      int voldata1 = analogRead(Voltage_sensor1);
+      int voldata2 = analogRead(Voltage_sensor2);
+
+      int vol_1_center = voldata1-1023;
+      int vol_2_center = 1023-voldata2;
+
+      float volR01 = (vol_1_center / 1024.0) * 3.3 * 156.545;
+      float volR02 = (vol_2_center / 1024.0) * 3.3 * 156.545;
+  
+      int CurRO = analogRead(Current_sensor)-527;
+      Cur =  (( ((float)CurRO) * 3.3)/1024.0)*10.22;
+            
+            c[i]=Cur;
+      Serial.print(Cur);
+      Serial.print("\t");
+      if(voldata1<voldata2){
+         v[i]=volR01;
+          Serial.println(volR01);
+          } else {
+            v[i]=volR02;
+            Serial.println(volR02);
+          }  
+         
+
+      delay(9);
+      
+     }
+}
+
+
 
 void loop() {
-    
+    LoadData();
+    //Serial.println("finished loading data!");
     Write_Message(webSocketClient, v, c, 101);
-    Serial.print("Written message: ");
-    Serial.println(i);
-    i++;
-    delay(1000);
 
 }
